@@ -4,37 +4,35 @@ if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     Break
 }
 
-Write-Host "--- СТАРТ РАЗВЕРТЫВАНИЯ: ФИЛИАЛ (БЕЗ OFFICE) ---" -ForegroundColor Green
+Write-Host "--- IT-DEPLOY: HYBRID MODE ---" -ForegroundColor Green
 
-# 2. Настройка Winget
-Write-Host "[1/3] Подготовка Winget..." -ForegroundColor Cyan
-winget source reset --force
-winget source update
+# 2. Установка Chrome (Сначала ищем на флешке Ventoy)
+Write-Host "`n>>> Установка Google Chrome..." -ForegroundColor Yellow
 
-# 3. Список софта (Офис удален)
-$apps = @(
-    "Google.Chrome", 
-    "NAPS2.NAPS2", 
-    "AnyDesk.AnyDesk", 
-    "Telegram.TelegramDesktop"
-)
+# Ищем букву диска, где лежит папка soft\ChromeStandaloneSetup64.exe
+$chromeLocalPath = Get-PSDrive -PSProvider FileSystem | ForEach-Object { 
+    $p = Join-Path $_.Root "soft\ChromeStandaloneSetup64.exe"
+    if (Test-Path $p) { $p }
+} | Select-Object -First 1
 
-# 4. Цикл установки
-Write-Host "[2/3] Установка приложений..." -ForegroundColor Cyan
-foreach ($app in $apps) { 
-    Write-Host "`n>>> Проверка: $app" -ForegroundColor Yellow
-    $status = winget list --id $app --source winget 2>$null
-    if ($status -match $app) {
-        Write-Host "--- $app уже установлена. Пропускаю. ---" -ForegroundColor Green
-    } else {
-        Write-Host "--- Качаю и ставлю $app... ---" -ForegroundColor Gray
-        winget install --id $app --source winget --silent --accept-package-agreements --accept-source-agreements --force
-    }
+if ($chromeLocalPath) {
+    Write-Host "[ОФЛАЙН] Нашел инсталлятор на флешке: $chromeLocalPath" -ForegroundColor Green
+    Start-Process -FilePath $chromeLocalPath -ArgumentList "/silent /install" -Wait
+} else {
+    Write-Host "[ОНЛАЙН] Файл на флешке не найден, качаю через Winget (может быть медленно)..." -ForegroundColor Gray
+    winget install --id Google.Chrome --source winget --silent --accept-package-agreements --force
 }
 
-# 5. Активация Windows (флаг /Ohook для офиса можно оставить на будущее или убрать)
+# 3. Установка остального софта (который качается нормально)
+$apps = @("NAPS2.NAPS2", "AnyDesk.AnyDesk", "Telegram.TelegramDesktop")
+
+foreach ($app in $apps) {
+    Write-Host "`n>>> Установка $app..." -ForegroundColor Yellow
+    winget install --id $app --source winget --silent --accept-package-agreements --force
+}
+
+# 4. Активация
 Write-Host "`n[3/3] Активация системы..." -ForegroundColor Cyan
-# Оставил /HWID (Windows). /Ohook не помешает, если Офис поставишь позже вручную.
 iex "& { $(irm https://get.activated.win) } /HWID /S"
 
-Write-Host "`n--- ВСЕ ГОТОВО! ---" -ForegroundColor Green
+Write-Host "`n--- ГОТОВО! МОЖНО ВЫНИМАТЬ ФЛЕШКУ ---" -ForegroundColor Green
