@@ -1,72 +1,51 @@
-# 1. Проверка прав администратора
+# 1. Права админа
 if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Warning "!!! ЗАПУСТИТЕ КОНСОЛЬ ОТ ИМЕНИ АДМИНИСТРАТОРА !!!"
+    Write-Warning "!!! ЗАПУСТИ ОТ ИМЕНИ АДМИНИСТРАТОРА !!!"
     Break
 }
 
-Write-Host "--- IT-ASSISTANT: HYBRID DEPLOY (FIXED CHECK) ---" -ForegroundColor Green
+Write-Host "--- IT-DEPLOY: FINAL EDITION (NAPS2 FIX) ---" -ForegroundColor Green
 
-# 2. Поиск флешки с папкой 'soft'
-$ventoyDrive = Get-PSDrive -PSProvider FileSystem | Where-Object { Test-Path (Join-Path $_.Root "soft") } | Select-Object -First 1
-
-if ($ventoyDrive) {
-    $softPath = Join-Path $ventoyDrive.Root "soft"
-    
-    # --- УСТАНОВКА CHROME С ФЛЕШКИ ---
-    $chromePath = Join-Path $softPath "ChromeStandaloneSetup64.exe"
-    if (Test-Path $chromePath) {
-        Write-Host ">>> Проверка Chrome..." -ForegroundColor Yellow
-        # Простая проверка: если папка Google Chrome уже существует в Program Files
-        if (Test-Path "C:\Program Files\Google\Chrome\Application\chrome.exe") {
-            Write-Host "[OK] Chrome уже установлен." -ForegroundColor Green
-        } else {
-            Write-Host "[...] Установка Chrome с флешки..." -ForegroundColor Cyan
-            Start-Process -FilePath $chromePath -ArgumentList "/silent /install" -Wait
-        }
+# 2. Установка Chrome (ищем на флешке Ventoy в папке soft)
+if (!(Test-Path "C:\Program Files\Google\Chrome\Application\chrome.exe")) {
+    $ventoyDrive = Get-PSDrive -PSProvider FileSystem | Where-Object { Test-Path (Join-Path $_.Root "soft\ChromeStandaloneSetup64.exe") } | Select-Object -First 1
+    if ($ventoyDrive) {
+        $chromePath = Join-Path $ventoyDrive.Root "soft\ChromeStandaloneSetup64.exe"
+        Write-Host ">>> Ставлю Chrome с флешки..." -ForegroundColor Cyan
+        Start-Process -FilePath $chromePath -ArgumentList "/silent /install" -Wait
+    } else {
+        Write-Host ">>> Инсталлятор Chrome на флешке не найден, пропускаю." -ForegroundColor Gray
     }
+} else { Write-Host "[OK] Chrome уже установлен." -ForegroundColor Green }
 
-    # --- УСТАНОВКА OFFICE 2024 (ISO) ---
-    $isoPath = Join-Path $softPath "ProPlus2024Retail.iso"
-    if (Test-Path $isoPath) {
-        Write-Host ">>> Проверка Office..." -ForegroundColor Yellow
-        # Проверяем наличие папки Office 16 (для 2024 это стандарт)
-        if (Test-Path "C:\Program Files\Microsoft Office\Office16") {
-            Write-Host "[OK] Office уже установлен." -ForegroundColor Green
-        } else {
-            Write-Host "[...] Монтирую и ставлю Office 2024 ISO..." -ForegroundColor Cyan
-            $mount = Mount-DiskImage -ImagePath $isoPath -PassThru
-            $driveLetter = ($mount | Get-Volume).DriveLetter
-            $officeProc = Start-Process -FilePath "${driveLetter}:\setup.exe" -PassThru
-            $officeProc | Wait-Process
-            Dismount-DiskImage -ImagePath $isoPath
-        }
-    }
-}
-
-# --- 3. УСТАНОВКА ЧЕРЕЗ WINGET С ГАРАНТИРОВАННОЙ ПРОВЕРКОЙ ---
+# 3. Установка остального через Winget с проверкой
 Write-Host "`n--- ПРОВЕРКА ДОПОЛНИТЕЛЬНОГО ПО ---" -ForegroundColor Cyan
 
-# Получаем ВЕСЬ список установленного софта в одну текстовую переменную
-$installedSoftware = winget list --source winget 2>$null | Out-String
+# Получаем список установленного софта один раз для корректной проверки
+$installedList = winget list --source winget 2>$null | Out-String
 
+# Список программ: для NAPS2 теперь используем просто "naps2"
 $apps = @(
-    @{ID="NAPS2"; Name="NAPS2"},
-    @{ID="AnyDesk.AnyDesk"; Name="AnyDesk"},
-    @{ID="Telegram.TelegramDesktop"; Name="Telegram"}
+    @{Query="naps2"; Name="NAPS2"},
+    @{Query="AnyDesk.AnyDesk"; Name="AnyDesk"},
+    @{Query="Telegram.TelegramDesktop"; Name="Telegram"}
 )
 
 foreach ($app in $apps) {
-    # Ищем ID приложения в общем списке (без учета регистра)
-    if ($installedSoftware -match [regex]::Escape($app.ID)) {
-        Write-Host "[OK] $($app.Name) найден в системе. Пропускаю." -ForegroundColor Green
+    # Проверяем наличие по имени или ID в общем списке
+    if ($installedList -match [regex]::Escape($app.Name) -or $installedList -match [regex]::Escape($app.Query)) {
+        Write-Host "[OK] $($app.Name) уже на месте." -ForegroundColor Green
     } else {
-        Write-Host "[!] $($app.Name) не найден. Качаю и ставлю..." -ForegroundColor Yellow
-        winget install --id $($app.ID) --source winget --silent --accept-package-agreements --accept-source-agreements --force
+        Write-Host "[!] $($app.Name) не найден. Устанавливаю..." -ForegroundColor Yellow
+        # Для NAPS2 используем просто имя, для остальных — ID
+        winget install $($app.Query) --silent --accept-package-agreements --accept-source-agreements --force
     }
 }
 
-# 4. Активация
-Write-Host "`n--- АКТИВАЦИЯ СИСТЕМЫ И OFFICE ---" -ForegroundColor Cyan
+# 4. Финальная активация
+Write-Host "`n--- АКТИВАЦИЯ (WINDOWS + OFFICE) ---" -ForegroundColor Cyan
+Write-Host "Запуск скрипта активации (подхватит твой ручной Office)..." -ForegroundColor Gray
+# /HWID - Windows 10/11, /Ohook - Office 2024, /S - тихий режим
 iex "& { $(irm https://get.activated.win) } /HWID /Ohook /S"
 
-Write-Host "`n--- ВСЕ ГОТОВО! МОЖНО ВЫНИМАТЬ ФЛЕШКУ ---" -ForegroundColor Green
+Write-Host "`n--- ВСЁ ГОТОВО! МОЖНО ВЫНИМАТЬ ФЛЕШКУ ---" -ForegroundColor Green
