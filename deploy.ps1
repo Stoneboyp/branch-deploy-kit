@@ -38,7 +38,7 @@ if ($ventoyDrive) {
 }
 
 # 2. Установка остального через интернет
-$apps = @("NAPS2.NAPS2", "AnyDesk.AnyDesk", "Telegram.TelegramDesktop")
+$apps = @("NAPS2", "AnyDesk.AnyDesk", "Telegram.TelegramDesktop")
 foreach ($app in $apps) {
     Write-Host ">>> Установка $app..." -ForegroundColor Yellow
     winget install --id $app --source winget --silent --accept-package-agreements --force
