@@ -1,22 +1,24 @@
-# 1. Права админа
+# 1. Проверка прав администратора
 if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Warning "!!! ЗАПУСТИ ОТ ИМЕНИ АДМИНИСТРАТОРА !!!"
+    Write-Warning "!!! ЗАПУСТИТЕ КОНСОЛЬ ОТ ИМЕНИ АДМИНИСТРАТОРА !!!"
     Break
 }
 
-Write-Host "--- IT-DEPLOY: VENTOY + OFFICE 2024 ---" -ForegroundColor Green
+Write-Host "--- IT-ASSISTANT: HYBRID DEPLOY (USB + CLOUD) ---" -ForegroundColor Green
 
-# Ищем букву диска флешки (где лежит папка soft)
+# 2. Поиск флешки с папкой 'soft'
 $ventoyDrive = Get-PSDrive -PSProvider FileSystem | Where-Object { Test-Path (Join-Path $_.Root "soft") } | Select-Object -First 1
 
 if ($ventoyDrive) {
     $softPath = Join-Path $ventoyDrive.Root "soft"
-    
-    # --- УСТАНОВКА CHROME ---
+    Write-Host "[USB] Найдена папка с софтом: $softPath" -ForegroundColor Cyan
+
+    # --- УСТАНОВКА CHROME С ФЛЕШКИ ---
     $chromePath = Join-Path $softPath "ChromeStandaloneSetup64.exe"
     if (Test-Path $chromePath) {
-        Write-Host ">>> Ставлю Chrome с флешки..." -ForegroundColor Green
+        Write-Host ">>> Установка Chrome..." -ForegroundColor Yellow
         Start-Process -FilePath $chromePath -ArgumentList "/silent /install" -Wait
+        Write-Host "[OK] Chrome установлен (или уже был)." -ForegroundColor Green
     }
 
     # --- УСТАНОВКА OFFICE 2024 (ISO) ---
@@ -26,27 +28,52 @@ if ($ventoyDrive) {
         $mount = Mount-DiskImage -ImagePath $isoPath -PassThru
         $driveLetter = ($mount | Get-Volume).DriveLetter
         
-        Write-Host ">>> Запуск Setup Office..." -ForegroundColor Yellow
-        # Запускаем setup.exe и ждем завершения
-        Start-Process -FilePath "${driveLetter}:\setup.exe" -Wait
+        $setupPath = "${driveLetter}:\setup.exe"
+        if (Test-Path $setupPath) {
+            Write-Host ">>> Запуск Setup Office... ЖДИТЕ ЗАВЕРШЕНИЯ!" -ForegroundColor Yellow
+            # Запускаем и жестко ждем закрытия процесса установки
+            $officeProc = Start-Process -FilePath $setupPath -PassThru
+            $officeProc | Wait-Process
+            Write-Host "[OK] Установка Office завершена." -ForegroundColor Green
+        }
         
         Write-Host ">>> Размонтирую ISO..." -ForegroundColor Gray
         Dismount-DiskImage -ImagePath $isoPath
     }
 } else {
-    Write-Warning "Флешка с папкой 'soft' не найдена! Пропускаю офлайн-установку."
+    Write-Warning "Флешка с папкой 'soft' не найдена! Пропускаю USB-этап."
 }
 
-# 2. Установка остального через интернет
-$apps = @("NAPS2", "AnyDesk.AnyDesk", "Telegram.TelegramDesktop")
+# 3. Установка дополнительного ПО через Winget с ПРОВЕРКОЙ
+Write-Host "`n--- ПРОВЕРКА ДОПОЛНИТЕЛЬНОГО ПО ---" -ForegroundColor Cyan
+
+$apps = @(
+    @{ID="NAPS2.NAPS2"; Name="NAPS2"},
+    @{ID="AnyDesk.AnyDesk"; Name="AnyDesk"},
+    @{ID="Telegram.TelegramDesktop"; Name="Telegram"}
+)
+
 foreach ($app in $apps) {
-    Write-Host ">>> Установка $app..." -ForegroundColor Yellow
-    winget install --id $app --source winget --silent --accept-package-agreements --force
+    # Получаем список установленного софта в виде строки (Out-String лечит пустые ответы)
+    $check = winget list --id $($app.ID) --source winget 2>$null | Out-String
+    
+    if ($check -match [regex]::Escape($app.ID)) {
+        Write-Host "[OK] $($app.Name) уже установлен. Пропускаю." -ForegroundColor Green
+    } else {
+        Write-Host "[...] Установка $($app.Name)..." -ForegroundColor Yellow
+        winget install --id $($app.ID) --source winget --silent --accept-package-agreements --accept-source-agreements --force
+    }
 }
 
-# 3. Активация (Теперь с /Ohook для Office 2024)
-Write-Host ">>> Активация Windows и Office 2024..." -ForegroundColor Cyan
-# /HWID для Windows, /Ohook для Office 2024
-iex "& { $(irm https://get.activated.win) } /HWID /Ohook /S"
+# 4. Активация (Windows + Office 2024)
+Write-Host "`n--- АКТИВАЦИЯ СИСТЕМЫ И OFFICE ---" -ForegroundColor Cyan
+$MAS_URL = "https://get.activated.win"
+# /HWID - Windows, /Ohook - Office 2024, /S - Silent
+try {
+    iex "& { $(irm $MAS_URL) } /HWID /Ohook /S"
+    Write-Host "[OK] Запрос на активацию отправлен." -ForegroundColor Green
+} catch {
+    Write-Host "[!] Ошибка активации. Проверьте интернет." -ForegroundColor Red
+}
 
-Write-Host "--- ВСЁ ГОТОВО! ---" -ForegroundColor Green
+Write-Host "`n--- ВСЕ ЗАДАЧИ ВЫПОЛНЕНЫ! МОЖНО ВЫНИМАТЬ ФЛЕШКУ ---" -ForegroundColor Green
