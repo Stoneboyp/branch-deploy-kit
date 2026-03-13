@@ -50,7 +50,7 @@ Write-Host "`n--- ПРОВЕРКА ДОПОЛНИТЕЛЬНОГО ПО ---" -For
 $installedSoftware = winget list --source winget 2>$null | Out-String
 
 $apps = @(
-    @{ID="NAPS2.NAPS2"; Name="NAPS2"},
+    @{ID="NAPS2"; Name="NAPS2"},
     @{ID="AnyDesk.AnyDesk"; Name="AnyDesk"},
     @{ID="Telegram.TelegramDesktop"; Name="Telegram"}
 )
